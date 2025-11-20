@@ -1,38 +1,32 @@
-FROM registry.cn-hangzhou.aliyuncs.com/public/ubuntu:22.04
+FROM python:3.9-slim-bullseye
 
 ENV TZ=Asia/Shanghai
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+ENV MODEL_PATH=/workspace/FireRedASR/models/small
+ENV PYTHONUNBUFFERED=1
+ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ENV PIP_TRUSTED_HOST=mirrors.aliyun.com
 
-RUN echo "deb http://mirrors.aliyun.com/ubuntu/ jammy main restricted universe multiverse" > /etc/apt/sources.list && \
-    echo "deb http://mirrors.aliyun.com/ubuntu/ jammy-updates main restricted universe multiverse" >> /etc/apt/sources.list && \
-    echo "deb http://mirrors.aliyun.com/ubuntu/ jammy-security main restricted universe multiverse" >> /etc/apt/sources.list && \
-    apt-get update -y --fix-missing && \
-    apt-get install -y --no-install-recommends \
-        python3.10 python3-pip python3-dev \
-        ffmpeg libsndfile1 libopenblas-dev libgfortran5 \
-        gcc g++ make git && \
-    ln -s /usr/bin/python3 /usr/bin/python && \
-    ln -s /usr/bin/pip3 /usr/bin/pip && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list \
+    && sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    git \
+    git-lfs \
+    ca-certificates \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
+    && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-COPY . .
+WORKDIR /workspace
 
-RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --no-cache-dir \
-    --default-timeout=1200 --retries=5 \
-    cn2an kaldiio kaldi_native_fbank numpy peft sentencepiece \
-    torch torchaudio torchvision transformers \
-    fastapi uvicorn python-multipart noisereduce soundfile
+RUN git config --global url."https://github.com/".insteadOf git@github.com: \
+    && git lfs install \
+    && git clone https://github.com/hongrongzhou/FireRedASR.git --depth 1 \
+    && cd FireRedASR \
+    && git lfs pull \
+    && pip3 install --upgrade pip \
+    && pip3 install -r requirements.txt torch torchaudio --no-cache-dir
 
-ENV HF_ENDPOINT=https://hf-mirror.com
-ENV PYTHONPATH=/app:$PYTHONPATH
-ENV PATH=/app/fireredasr:/app/fireredasr/utils:$PATH
+EXPOSE 8080
 
-RUN mkdir -p pretrained_models && \
-    git clone https://hf-mirror.com/FireRedTeam/FireRedASR-AED-small pretrained_models/FireRedASR-AED-small
-
-RUN echo "from fastapi import FastAPI, UploadFile, File; import tempfile; import os; from fireredasr.models.fireredasr import FireRedAsr; app = FastAPI(); model = FireRedAsr.from_pretrained('aed', 'pretrained_models/FireRedASR-AED-small', {'use_gpu':0}); @app.post('/asr') async def asr(file: UploadFile = File(...)): with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp: tmp.write(await file.read()); tmp_path = tmp.name; try: results = model.transcribe(['tmp_uttid'], [tmp_path], {'beam_size':3, 'nbest':1}); return {'text': results[0]['text']} finally: os.remove(tmp_path); @app.get('/health') async def health(): return {'status': 'ok'}" > main.py
-
-EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+WORKDIR /workspace/FireRedASR
+CMD ["sh", "-c", "python3 fire_red_asr.py --model_path $MODEL_PATH --port 8080"]
