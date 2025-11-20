@@ -1,12 +1,11 @@
-FROM ubuntu:22.04
+FROM registry.cn-hangzhou.aliyuncs.com/public/ubuntu:22.04
 
 ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# Use Ubuntu official public sources (no Alibaba Cloud exclusive links)
-RUN echo "deb http://archive.ubuntu.com/ubuntu/ jammy main restricted universe multiverse" > /etc/apt/sources.list && \
-    echo "deb http://archive.ubuntu.com/ubuntu/ jammy-updates main restricted universe multiverse" >> /etc/apt/sources.list && \
-    echo "deb http://archive.ubuntu.com/ubuntu/ jammy-security main restricted universe multiverse" >> /etc/apt/sources.list && \
+RUN echo "deb http://mirrors.aliyun.com/ubuntu/ jammy main restricted universe multiverse" > /etc/apt/sources.list && \
+    echo "deb http://mirrors.aliyun.com/ubuntu/ jammy-updates main restricted universe multiverse" >> /etc/apt/sources.list && \
+    echo "deb http://mirrors.aliyun.com/ubuntu/ jammy-security main restricted universe multiverse" >> /etc/apt/sources.list && \
     apt-get update -y --fix-missing && \
     apt-get install -y --no-install-recommends \
         python3.10 python3-pip python3-dev \
@@ -20,14 +19,12 @@ RUN echo "deb http://archive.ubuntu.com/ubuntu/ jammy main restricted universe m
 WORKDIR /app
 COPY . .
 
-# Use Tsinghua PyPI public source (public, no binding)
 RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --no-cache-dir \
     --default-timeout=1200 --retries=5 \
     cn2an kaldiio kaldi_native_fbank numpy peft sentencepiece \
     torch torchaudio torchvision transformers \
     fastapi uvicorn python-multipart noisereduce soundfile
 
-# HF mirror (public, no binding)
 ENV HF_ENDPOINT=https://hf-mirror.com
 ENV PYTHONPATH=/app:$PYTHONPATH
 ENV PATH=/app/fireredasr:/app/fireredasr/utils:$PATH
